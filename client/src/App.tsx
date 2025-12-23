@@ -29,7 +29,9 @@ interface Room {
 }
 
 // --- Constants ---
-const GIPHY_API_KEY = import.meta.env.VITE_GIPHY_API_KEY || 'dc6zaTOxFJmzC'; // Fallback to public beta key if possible
+const KLIPY_APP_KEY = import.meta.env.VITE_KLIPY_APP_KEY && import.meta.env.VITE_KLIPY_APP_KEY !== 'undefined'
+  ? import.meta.env.VITE_KLIPY_APP_KEY
+  : 'sandbox-mJokm7E2jH';
 const SOCKET_URL = import.meta.env.VITE_SOCKET_URL || 'http://localhost:3001';
 
 function App() {
@@ -42,21 +44,37 @@ function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedGif, setSelectedGif] = useState<string | null>(null);
   const [votedFor, setVotedFor] = useState<string | null>(null);
+  const [winners, setWinners] = useState<string[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const newSocket = io(SOCKET_URL);
+    const savedSessionId = localStorage.getItem('gif_league_session');
+
+    const newSocket = io(SOCKET_URL, {
+      auth: { sessionId: savedSessionId }
+    });
+
     setSocket(newSocket);
 
+    newSocket.on('session', ({ sessionId }) => {
+      localStorage.setItem('gif_league_session', sessionId);
+    });
+
     newSocket.on('room-created', (room: Room) => setRoom(room));
-    newSocket.on('player-joined', (room: Room) => setRoom(room));
+    newSocket.on('player-joined', (room: Room) => {
+      setRoom(room);
+      // Auto-set player name if reconnected
+      const me = room.players.find(p => p.id === newSocket.id);
+      if (me) setPlayerName(me.name);
+    });
     newSocket.on('game-started', (room: Room) => setRoom(room));
     newSocket.on('topic-submitted', (room: Room) => {
       setRoom(room);
       setSelectedGif(null);
       setGifs([]);
       setSearchQuery('');
+      setWinners([]);
     });
     newSocket.on('gif-submitted', ({ playerCount, submissionCount }) => {
       // Optional: show progress
@@ -65,9 +83,10 @@ function App() {
       setRoom(room);
       setVotedFor(null);
     });
-    newSocket.on('round-ended', ({ room, winners }: { room: Room, winners: string[] }) => {
+    newSocket.on('round-ended', ({ room, winners: roundWinners }: { room: Room, winners: string[] }) => {
       setRoom(room);
-      if (winners.includes(newSocket.id!)) {
+      setWinners(roundWinners);
+      if (roundWinners.includes(newSocket.id!)) {
         confetti();
       }
     });
@@ -81,6 +100,12 @@ function App() {
       newSocket.disconnect();
     };
   }, []);
+
+  useEffect(() => {
+    if (room?.status === 'gif-selection' && gifs.length === 0) {
+      fetchTrendingGifs();
+    }
+  }, [room?.status]);
 
   const createRoom = () => {
     if (!playerName) return setError('Enter your name');
@@ -96,6 +121,22 @@ function App() {
     if (room) socket?.emit('start-game', { roomId: room.id });
   };
 
+  const fetchTrendingGifs = async () => {
+    setLoading(true);
+    try {
+      const res = await fetch(`https://api.klipy.com/api/v1/${KLIPY_APP_KEY}/gifs/trending?customer_id=${socket?.id || 'guest'}&per_page=12`);
+      const data = await res.json();
+      if (data.data?.data) {
+        setGifs(data.data.data);
+      } else if (Array.isArray(data.data)) {
+        setGifs(data.data);
+      }
+    } catch (err) {
+      console.error('Failed to fetch trending GIFs', err);
+    }
+    setLoading(false);
+  };
+
   const submitTopic = () => {
     if (room && topicInput) {
       socket?.emit('submit-topic', { roomId: room.id, topic: topicInput });
@@ -105,12 +146,26 @@ function App() {
   const searchGifs = async () => {
     if (!searchQuery) return;
     setLoading(true);
+    console.log('Searching KLIPY GIFs for:', searchQuery);
     try {
-      const res = await fetch(`https://api.giphy.com/v1/gifs/search?api_key=${GIPHY_API_KEY}&q=${encodeURIComponent(searchQuery)}&limit=12`);
+      const res = await fetch(`https://api.klipy.com/api/v1/${KLIPY_APP_KEY}/gifs/search?q=${encodeURIComponent(searchQuery)}&customer_id=${socket?.id || 'guest'}&per_page=12`);
+      if (!res.ok) {
+        const errorData = await res.json();
+        console.error('Klipy API error:', errorData);
+        throw new Error(errorData.message || 'Failed to fetch GIFs');
+      }
       const data = await res.json();
-      setGifs(data.data);
-    } catch (err) {
-      setError('Failed to fetch GIFs');
+      console.log('Klipy data received:', data.data?.data?.length || 0, 'items');
+      if (data.data?.data) {
+        setGifs(data.data.data);
+      } else if (Array.isArray(data.data)) {
+        setGifs(data.data);
+      } else {
+        setGifs([]);
+      }
+    } catch (err: any) {
+      console.error('Klipy search failed:', err);
+      setError(`GIF Search Failed: ${err.message}`);
     }
     setLoading(false);
   };
@@ -177,6 +232,7 @@ function App() {
           submitVote={submitVote}
           nextRound={nextRound}
           loading={loading}
+          winners={winners}
         />
       )}
     </div>
@@ -228,7 +284,7 @@ function JoinScreen({ playerName, setPlayerName, roomIdInput, setRoomIdInput, cr
   );
 }
 
-function GameScreen({ room, socketId, isMyTurn, topicInput, setTopicInput, submitTopic, startGame, searchQuery, setSearchQuery, searchGifs, gifs, selectedGif, submitGif, votedFor, submitVote, nextRound, loading }: any) {
+function GameScreen({ room, socketId, isMyTurn, topicInput, setTopicInput, submitTopic, startGame, searchQuery, setSearchQuery, searchGifs, gifs, selectedGif, submitGif, votedFor, submitVote, nextRound, loading, winners }: any) {
   const SUGGESTED_TOPICS = [
     "When you see your ex in public",
     "Friday at 4:59 PM",
@@ -303,7 +359,7 @@ function GameScreen({ room, socketId, isMyTurn, topicInput, setTopicInput, submi
             ) : (
               <>
                 <h3>Waiting for Topic</h3>
-                <p>{room.players.find((p: any) => p.id === room.winnerOfLastRound)?.name} is choosing a topic...</p>
+                <p>{room.players.find((p: any) => p.id === room.winnerOfLastRound)?.name || 'Someone'} is choosing a topic...</p>
               </>
             )}
           </motion.div>
@@ -331,13 +387,22 @@ function GameScreen({ room, socketId, isMyTurn, topicInput, setTopicInput, submi
                     <Search size={20} />
                   </button>
                 </div>
-                {loading && <p>Loading...</p>}
+                {loading && <p className="text-center">Loading GIFs...</p>}
+                {!loading && gifs.length === 0 && searchQuery && <p className="text-center">No GIFs found for "{searchQuery}". Try something else!</p>}
+                {!searchQuery && gifs.length > 0 && <p style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.5rem' }}>🔥 Showing Trending GIFs</p>}
                 <div className="gif-grid">
-                  {gifs.map(g => (
-                    <div key={g.id} className="gif-item" onClick={() => submitGif(g.images.fixed_height.url)}>
-                      <img src={g.images.fixed_height.url} alt="GIF" />
-                    </div>
-                  ))}
+                  {gifs.map(g => {
+                    const gifUrl = g.file?.hd?.gif?.url || g.file?.xs?.gif?.url;
+                    return (
+                      <div key={g._id || g.id} className="gif-item" onClick={() => submitGif(gifUrl)}>
+                        <img
+                          src={gifUrl}
+                          alt="Klipy GIF"
+                          onError={(e: any) => e.target.src = 'https://via.placeholder.com/200?text=GIF+Error'}
+                        />
+                      </div>
+                    );
+                  })}
                 </div>
               </>
             )}
@@ -376,10 +441,13 @@ function GameScreen({ room, socketId, isMyTurn, topicInput, setTopicInput, submi
             <div className="gif-grid" style={{ width: '100%' }}>
               {room.submissions.map((sub: any) => {
                 const player = room.players.find((p: any) => p.id === sub.playerId);
+                const isWinner = winners.includes(sub.playerId);
                 return (
-                  <div key={sub.playerId} className="glass-card text-center">
+                  <div key={sub.playerId} className={`gif-item glass-card text-center ${isWinner ? 'winner-highlight' : ''}`}>
+                    {isWinner && <div className="winner-tag">🏆 WINNER</div>}
                     <img src={sub.gifUrl} style={{ width: '100%', borderRadius: '8px' }} />
                     <p style={{ marginTop: '0.5rem', fontWeight: 'bold' }}>{player?.name}</p>
+                    {isWinner && <p style={{ fontSize: '0.8rem', color: '#fbbf24' }}>+{room.players.length > 1 ? '1 point' : ''}</p>}
                   </div>
                 );
               })}
