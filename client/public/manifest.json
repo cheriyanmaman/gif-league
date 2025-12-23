@@ -1,0 +1,18 @@
+{
+    "short_name": "GIF League",
+    "name": "GIF League - Multiplayer GIF Battle",
+    "icons": [
+        {
+            "src": "/logo.png",
+            "type": "image/png",
+            "sizes": "512x512",
+            "purpose": "any maskable"
+        }
+    ],
+    "start_url": "/",
+    "background_color": "#0f172a",
+    "display": "standalone",
+    "scope": "/",
+    "theme_color": "#ec4899",
+    "description": "The ultimate multiplayer GIF battle game."
+}
