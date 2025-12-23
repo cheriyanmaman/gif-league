@@ -1,7 +1,7 @@
-import React, { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import { io, Socket } from 'socket.io-client';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Trophy, Users, Send, Search, Check, Play, LogIn, Plus } from 'lucide-react';
+import { Trophy, Send, Search, Check, LogIn, Plus } from 'lucide-react';
 import confetti from 'canvas-confetti';
 
 // --- Types ---
@@ -76,7 +76,7 @@ function App() {
       setSearchQuery('');
       setWinners([]);
     });
-    newSocket.on('gif-submitted', ({ playerCount, submissionCount }) => {
+    newSocket.on('gif-submitted', () => {
       // Optional: show progress
     });
     newSocket.on('all-gifs-submitted', (room: Room) => {
@@ -391,7 +391,7 @@ function GameScreen({ room, socketId, isMyTurn, topicInput, setTopicInput, submi
                 {!loading && gifs.length === 0 && searchQuery && <p className="text-center">No GIFs found for "{searchQuery}". Try something else!</p>}
                 {!searchQuery && gifs.length > 0 && <p style={{ fontSize: '0.8rem', opacity: 0.7, marginBottom: '0.5rem' }}>🔥 Showing Trending GIFs</p>}
                 <div className="gif-grid">
-                  {gifs.map(g => {
+                  {gifs.map((g: any) => {
                     const gifUrl = g.file?.hd?.gif?.url || g.file?.xs?.gif?.url;
                     return (
                       <div key={g._id || g.id} className="gif-item" onClick={() => submitGif(gifUrl)}>
