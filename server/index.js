@@ -10,6 +10,7 @@ const app = express();
 const allowedOrigins = [
     "http://localhost:5173",
     "http://192.168.0.5:5173",
+    "https://gif-league.vercel.app",
     process.env.FRONTEND_URL,
 ].filter(Boolean);
 
