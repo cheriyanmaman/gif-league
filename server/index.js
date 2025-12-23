@@ -10,7 +10,7 @@ const app = express();
 const allowedOrigins = [
     "http://localhost:5173",
     "http://192.168.0.5:5173",
-    "https://gif-league.onrender.com",
+    "https://gif-league-1.onrender.com",
     process.env.FRONTEND_URL,
 ].filter(Boolean);
 
